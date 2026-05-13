@@ -1,0 +1,12 @@
+# PyScript configuration.
+#
+# `[files]` lists URLs to fetch (keys, relative to index.html) and where to
+# place them in the Pyodide virtual filesystem (values). We flatten src/*.py
+# into the working directory so `import notes` etc. just works.
+
+[files]
+"./src/notes.py" = "./notes.py"
+"./src/chords.py" = "./chords.py"
+"./src/tunings.py" = "./tunings.py"
+"./src/voicings.py" = "./voicings.py"
+"./src/render.py" = "./render.py"

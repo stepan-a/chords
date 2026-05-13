@@ -1,0 +1,9 @@
+[project]
+name = "chords"
+version = "0.0.1"
+description = "Guitar chord diagram generator with support for arbitrary tunings"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Accords pour guitare</title>
+  <link rel="stylesheet" href="https://pyscript.net/releases/2024.11.1/core.css">
+  <script type="module" src="https://pyscript.net/releases/2024.11.1/core.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 24px;
+      color: #1c1c1e;
+      background: #fafafa;
+    }
+    h1 {
+      margin: 0 0 4px;
+      font-size: 24px;
+    }
+    .lead {
+      color: #555;
+      margin: 0 0 20px;
+      font-size: 14px;
+    }
+    code {
+      background: #eee;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 0.9em;
+    }
+    .controls {
+      background: white;
+      padding: 16px 20px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: grid;
+      grid-template-columns: max-content 1fr max-content 1fr;
+      gap: 10px 12px;
+      align-items: center;
+    }
+    .controls label.title {
+      font-size: 13px;
+      color: #444;
+      font-weight: 500;
+    }
+    input[type="text"], select {
+      padding: 6px 10px;
+      font-size: 15px;
+      border: 1px solid #bbb;
+      border-radius: 4px;
+      background: white;
+      box-sizing: border-box;
+      width: 100%;
+    }
+    input[type="text"]:focus, select:focus {
+      outline: 2px solid #4a90e2;
+      outline-offset: -1px;
+      border-color: transparent;
+    }
+    .radio-group {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 16px;
+      font-size: 13px;
+      align-items: center;
+    }
+    .radio-group > span:first-child {
+      color: #444;
+      font-weight: 500;
+    }
+    .radio-group label {
+      cursor: pointer;
+      user-select: none;
+    }
+    #chord-info {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      min-height: 1.4em;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 13px;
+      color: #444;
+    }
+    #error {
+      color: #c00;
+    }
+    #voicings {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 16px;
+    }
+    .voicing {
+      background: white;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      display: flex;
+      justify-content: center;
+    }
+    .voicing svg {
+      max-width: 100%;
+      height: auto;
+    }
+    #loading {
+      padding: 24px;
+      text-align: center;
+      color: #888;
+      font-style: italic;
+      background: white;
+      border: 1px dashed #ccc;
+      border-radius: 8px;
+    }
+    #loading.hidden { display: none; }
+    .empty {
+      color: #888;
+      padding: 24px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>Accords pour guitare</h1>
+  <p class="lead">
+    Symbole d'accord en notation anglo-saxonne (ex. <code>Cmaj7</code>,
+    <code>F#m7b5</code>, <code>D/F#</code>, <code>Bbm9</code>).
+  </p>
+
+  <div class="controls">
+    <label class="title" for="chord-input">Accord</label>
+    <input type="text" id="chord-input" value="C" autocomplete="off"
+           spellcheck="false" autocapitalize="off">
+
+    <label class="title" for="tuning-select">Accordage</label>
+    <select id="tuning-select">
+      <!-- Pre-populated in HTML so the dropdown is usable before PyScript loads. -->
+      <option value="Standard">Standard (E A D G B E)</option>
+      <option value="Drop D">Drop D</option>
+      <option value="Drop C">Drop C</option>
+      <option value="DADGAD">DADGAD</option>
+      <option value="Open G">Open G</option>
+      <option value="Open D">Open D</option>
+      <option value="Open E">Open E</option>
+      <option value="Open C">Open C</option>
+      <option value="Eb Standard">Eb Standard (½ ton plus bas)</option>
+      <option value="D Standard">D Standard (1 ton plus bas)</option>
+    </select>
+
+    <div class="radio-group">
+      <span>Étiquettes :</span>
+      <label><input type="radio" name="label-mode" value="fingers" checked> Doigts</label>
+      <label><input type="radio" name="label-mode" value="degrees"> Degrés (romains)</label>
+      <label><input type="radio" name="label-mode" value="notes"> Notes</label>
+      <label><input type="radio" name="label-mode" value="none"> Aucune</label>
+    </div>
+
+    <div id="chord-info">
+      <span id="chord-notes"></span>
+      <span id="error"></span>
+    </div>
+  </div>
+
+  <div id="loading">Chargement du moteur Python (~10 Mo, mis en cache ensuite)…</div>
+  <div id="voicings"></div>
+
+  <script type="py" src="./main.py" config="./pyscript.toml"></script>
+</body>
+</html>
