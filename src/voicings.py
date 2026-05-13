@@ -95,8 +95,21 @@ class SearchOptions:
     """If True, muted strings between sounding strings are allowed but
     penalized; if False, sounding strings must be a contiguous block."""
 
-    limit: int = 6
+    limit: int = 8
     """Maximum number of voicings to return."""
+
+    diversify: bool = True
+    """When True, the result is biased toward variety: a greedy pass
+    rejects each candidate that is too similar to one already picked
+    (so we get distinct shapes across the neck instead of N variants
+    of the same fingering), then fills the remaining slots with the
+    best-scored leftovers."""
+
+    min_diversity_distance: int = 5
+    """Minimum :func:`voicing_distance` between any two voicings kept
+    by the diversification pass. Larger values give more variety but
+    can leave the result short on candidates; smaller values let more
+    near-duplicates through. ``0`` disables diversification."""
 
 
 # --- Search -------------------------------------------------------------
@@ -167,7 +180,67 @@ def find_voicings(
         deduped.append(v)
 
     filtered = _filter_dominated(deduped)
+    if options.diversify and options.min_diversity_distance > 0:
+        return _diversify(
+            filtered, options.limit, options.min_diversity_distance
+        )
     return filtered[: options.limit]
+
+
+def _diversify(
+    voicings: list[Voicing],
+    target: int,
+    min_distance: int,
+) -> list[Voicing]:
+    """Pick ``target`` voicings that are visually distinct from each other.
+
+    Uses :func:`voicing_distance` as the similarity metric. A two-pass
+    greedy algorithm:
+
+    1.  **Distinct pass.** Walk the score-sorted candidates and accept
+        each one only if its :func:`voicing_distance` to *every*
+        already-picked voicing is at least ``min_distance``. This kills
+        both kinds of redundancy:
+
+        * Near-duplicates at the same fret region (e.g. F barre at fret 1
+          with various strings muted) — these have low pairwise distance.
+        * Multiple variants of the same shape transposed in tiny steps.
+
+        It also naturally produces neck coverage because crossing a few
+        frets adds heavy hand-shift contribution to the distance.
+
+    2.  **Fill pass.** If the distinct pass came up short (typical when
+        ``min_distance`` is large or the chord has few candidates), top
+        up from the best-scored leftovers without the distance
+        requirement, so the user always sees ``target`` tiles.
+
+    Results are returned in score order, so the best voicing remains
+    first regardless of where it sits on the neck.
+    """
+    if not voicings or target <= 0:
+        return []
+
+    picked: list[Voicing] = [voicings[0]]
+
+    # 1. Distinct pass.
+    for v in voicings[1:]:
+        if len(picked) >= target:
+            break
+        if all(_diversity_distance(v, p) >= min_distance for p in picked):
+            picked.append(v)
+
+    # 2. Fill pass with best-scored leftovers.
+    if len(picked) < target:
+        picked_ids = {id(p) for p in picked}
+        for v in voicings:
+            if id(v) in picked_ids:
+                continue
+            picked.append(v)
+            if len(picked) >= target:
+                break
+
+    picked.sort(key=lambda v: v.score)
+    return picked
 
 
 def _filter_dominated(voicings: list[Voicing]) -> list[Voicing]:
@@ -270,6 +343,25 @@ def voicing_distance(prev: Voicing, curr: Voicing) -> int:
         else:
             string_motion += abs(f1 - f2)
     return 3 * hand_shift + string_motion
+
+
+def _diversity_distance(a: Voicing, b: Voicing) -> int:
+    """Distance metric used specifically for diversification.
+
+    Built on top of :func:`voicing_distance` but adds a heavy penalty
+    when the two voicings have different bass strings. Bass changes
+    are aurally striking (root-position vs. inversion vs. 5-in-bass)
+    even when the rest of the fretting hardly moves; without this
+    boost, two voicings whose only difference is whether a low string
+    is muted or sounded — like Open G's ``x00000`` (G in the bass)
+    versus ``000000`` (D in the bass) — are at distance 1, and one
+    of them gets rejected as a near-duplicate even though they're
+    distinct chords sonically.
+    """
+    base = voicing_distance(a, b)
+    if _bass_index(a) != _bass_index(b):
+        base += 10
+    return base
 
 
 def pick_closest_index(
