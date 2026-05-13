@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Accords pour guitare</title>
+  <title data-i18n="page_title">Accords pour guitare</title>
   <link rel="stylesheet" href="https://pyscript.net/releases/2024.11.1/core.css">
   <script type="module" src="https://pyscript.net/releases/2024.11.1/core.js"></script>
   <style>
@@ -15,9 +15,37 @@
       color: #1c1c1e;
       background: #fafafa;
     }
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 4px;
+    }
     h1 {
       margin: 0 0 4px;
       font-size: 24px;
+    }
+    .lang-switcher {
+      display: flex;
+      gap: 2px;
+      margin-top: 4px;
+    }
+    .lang-switcher button {
+      padding: 4px 10px;
+      border: 1px solid #bbb;
+      background: white;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      font-family: inherit;
+      color: #444;
+      font-weight: 500;
+    }
+    .lang-switcher button.active {
+      background: #1c1c1e;
+      color: white;
+      border-color: #1c1c1e;
     }
     .lead {
       color: #555;
@@ -123,21 +151,29 @@
   </style>
 </head>
 <body>
-  <h1>Accords pour guitare</h1>
-  <p class="lead">
+  <div class="header-row">
+    <h1 data-i18n="h1">Accords pour guitare</h1>
+    <div class="lang-switcher" role="group" aria-label="Language">
+      <button type="button" data-lang="fr" class="active">FR</button>
+      <button type="button" data-lang="en">EN</button>
+    </div>
+  </div>
+  <p class="lead" data-i18n="lead_html">
     Symbole d'accord en notation anglo-saxonne (ex. <code>Cmaj7</code>,
     <code>F#m7b5</code>, <code>D/F#</code>, <code>Bbm9</code>).
   </p>
 
   <div class="controls">
-    <label class="title" for="chord-input">Accord</label>
+    <label class="title" for="chord-input" data-i18n="chord_label">Accord</label>
     <input type="text" id="chord-input" value="C" autocomplete="off"
            spellcheck="false" autocapitalize="off">
 
-    <label class="title" for="tuning-select">Accordage</label>
+    <label class="title" for="tuning-select" data-i18n="tuning_label">Accordage</label>
     <select id="tuning-select">
-      <!-- Pre-populated in HTML so the dropdown is usable before PyScript loads. -->
-      <option value="Standard">Standard (E A D G B E)</option>
+      <!-- Pre-populated as plain names so the dropdown is usable before
+           PyScript loads. PyScript rebuilds with the open-string pitches
+           appended (e.g. "Standard (E A D G B E)"). -->
+      <option value="Standard">Standard</option>
       <option value="Drop D">Drop D</option>
       <option value="Drop C">Drop C</option>
       <option value="DADGAD">DADGAD</option>
@@ -145,16 +181,20 @@
       <option value="Open D">Open D</option>
       <option value="Open E">Open E</option>
       <option value="Open C">Open C</option>
-      <option value="Eb Standard">Eb Standard (½ ton plus bas)</option>
-      <option value="D Standard">D Standard (1 ton plus bas)</option>
+      <option value="Eb Standard">Eb Standard</option>
+      <option value="D Standard">D Standard</option>
     </select>
 
     <div class="radio-group">
-      <span>Étiquettes :</span>
-      <label><input type="radio" name="label-mode" value="fingers" checked> Doigts</label>
-      <label><input type="radio" name="label-mode" value="degrees"> Degrés (romains)</label>
-      <label><input type="radio" name="label-mode" value="notes"> Notes</label>
-      <label><input type="radio" name="label-mode" value="none"> Aucune</label>
+      <span data-i18n="labels_legend">Étiquettes :</span>
+      <label><input type="radio" name="label-mode" value="fingers" checked>
+        <span data-i18n="label_fingers">Doigts</span></label>
+      <label><input type="radio" name="label-mode" value="degrees">
+        <span data-i18n="label_degrees">Degrés (romains)</span></label>
+      <label><input type="radio" name="label-mode" value="notes">
+        <span data-i18n="label_notes">Notes</span></label>
+      <label><input type="radio" name="label-mode" value="none">
+        <span data-i18n="label_none">Aucune</span></label>
     </div>
 
     <div id="chord-info">
@@ -163,7 +203,7 @@
     </div>
   </div>
 
-  <div id="loading">Chargement du moteur Python (~10 Mo, mis en cache ensuite)…</div>
+  <div id="loading" data-i18n="loading">Chargement du moteur Python (~10 Mo, mis en cache ensuite)…</div>
   <div id="voicings"></div>
 
   <script type="py" src="./main.py" config="./pyscript.toml"></script>
