@@ -63,12 +63,12 @@ class TestNormalise:
 
 class TestLookup:
     def test_known_key(self):
-        assert t("fr", "chord_label") == "Accord"
-        assert t("en", "chord_label") == "Chord"
+        assert t("fr", "chord_label") == "Accords"
+        assert t("en", "chord_label") == "Chords"
 
     def test_unknown_lang_falls_back(self):
         # German is not supported; we should still get the FR translation.
-        assert t("de", "chord_label") == "Accord"
+        assert t("de", "chord_label") == "Accords"
 
     def test_unknown_key_returns_key(self):
         assert t("fr", "nonexistent_key_xyz") == "nonexistent_key_xyz"

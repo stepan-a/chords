@@ -19,11 +19,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "page_title": "Accords pour guitare",
         "h1": "Accords pour guitare",
         "lead_html": (
-            "Symbole d'accord en notation anglo-saxonne "
-            "(ex. <code>Cmaj7</code>, <code>F#m7b5</code>, "
-            "<code>D/F#</code>, <code>Bbm9</code>)."
+            "Suite d'accords en notation anglo-saxonne, séparés par "
+            "espace, virgule ou <code>|</code> "
+            "(ex. <code>Am F C G</code>, <code>Cmaj7 | D/F# | Bbm9</code>)."
         ),
-        "chord_label": "Accord",
+        "chord_label": "Accords",
         "tuning_label": "Accordage",
         "labels_legend": "Étiquettes :",
         "label_fingers": "Doigts",
@@ -39,16 +39,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "(essaie un accordage différent ou simplifie l'accord)."
         ),
         "lang_label": "Langue :",
+        "alternatives_hint": "Clique sur une position pour la sélectionner.",
     },
     "en": {
         "page_title": "Guitar chord diagrams",
         "h1": "Guitar chord diagrams",
         "lead_html": (
-            "Chord symbol in Anglo-Saxon notation "
-            "(e.g. <code>Cmaj7</code>, <code>F#m7b5</code>, "
-            "<code>D/F#</code>, <code>Bbm9</code>)."
+            "Chord progression in Anglo-Saxon notation, separated by "
+            "space, comma or <code>|</code> "
+            "(e.g. <code>Am F C G</code>, <code>Cmaj7 | D/F# | Bbm9</code>)."
         ),
-        "chord_label": "Chord",
+        "chord_label": "Chords",
         "tuning_label": "Tuning",
         "labels_legend": "Labels:",
         "label_fingers": "Fingers",
@@ -64,6 +65,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "(try a different tuning or simplify the chord)."
         ),
         "lang_label": "Language:",
+        "alternatives_hint": "Click a position to select it.",
     },
 }
 

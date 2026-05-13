@@ -103,35 +103,85 @@
       cursor: pointer;
       user-select: none;
     }
-    #chord-info {
-      grid-column: 1 / -1;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      min-height: 1.4em;
-      font-family: ui-monospace, "SF Mono", Menlo, monospace;
-      font-size: 13px;
-      color: #444;
-    }
-    #error {
-      color: #c00;
-    }
     #voicings {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      display: flex;
+      flex-wrap: wrap;
       gap: 16px;
+      align-items: flex-start;
     }
-    .voicing {
+    .chord-slot {
       background: white;
-      padding: 8px;
       border: 1px solid #ddd;
       border-radius: 6px;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      align-items: center;
+    }
+    .chord-slot.expanded {
+      background: #f3f6fb;
+      border-color: #c4d4ee;
+    }
+    .voicing {
       display: flex;
       justify-content: center;
+      border-radius: 4px;
+      transition: background-color 0.1s, transform 0.1s;
     }
     .voicing svg {
       max-width: 100%;
       height: auto;
+      display: block;
+    }
+    .voicing.active {
+      cursor: pointer;
+      padding: 2px;
+      border: 2px solid transparent;
+    }
+    .voicing.active:hover {
+      border-color: #4a90e2;
+    }
+    .chord-slot.expanded .voicing.active {
+      border-color: #4a90e2;
+    }
+    .voicing.alternative {
+      cursor: pointer;
+      padding: 2px;
+      border: 2px solid transparent;
+      opacity: 0.7;
+    }
+    .voicing.alternative:hover {
+      opacity: 1;
+      border-color: #4a90e2;
+    }
+    .alternatives {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 4px;
+      width: 100%;
+      padding-top: 6px;
+      border-top: 1px solid #d4dceb;
+    }
+    .slot-notes {
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 11px;
+      color: #555;
+    }
+    .chord-error {
+      padding: 16px;
+      text-align: center;
+      color: #888;
+    }
+    .chord-error-symbol {
+      font-weight: 600;
+      color: #1c1c1e;
+      margin-bottom: 4px;
+      font-size: 16px;
+    }
+    .chord-error-message {
+      font-size: 12px;
+      color: #c00;
     }
     #loading {
       padding: 24px;
@@ -164,8 +214,8 @@
   </p>
 
   <div class="controls">
-    <label class="title" for="chord-input" data-i18n="chord_label">Accord</label>
-    <input type="text" id="chord-input" value="C" autocomplete="off"
+    <label class="title" for="chord-input" data-i18n="chord_label">Accords</label>
+    <input type="text" id="chord-input" value="Am F C G" autocomplete="off"
            spellcheck="false" autocapitalize="off">
 
     <label class="title" for="tuning-select" data-i18n="tuning_label">Accordage</label>
@@ -195,11 +245,6 @@
         <span data-i18n="label_notes">Notes</span></label>
       <label><input type="radio" name="label-mode" value="none">
         <span data-i18n="label_none">Aucune</span></label>
-    </div>
-
-    <div id="chord-info">
-      <span id="chord-notes"></span>
-      <span id="error"></span>
     </div>
   </div>
 

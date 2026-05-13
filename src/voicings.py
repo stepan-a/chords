@@ -233,6 +233,67 @@ def _dominates(a: Voicing, b: Voicing) -> bool:
     return _bass_index(a) == _bass_index(b)
 
 
+# --- Voice-leading distance (for chord progressions) -----------------------
+
+def voicing_distance(prev: Voicing, curr: Voicing) -> int:
+    """Approximate fretboard distance between two voicings.
+
+    Designed for default-voicing selection in a progression: minimising
+    this from one chord to the next keeps the player's hand from leaping
+    across the neck.
+
+    The metric sums two contributions:
+
+    * **Hand position shift** — the absolute difference between the
+      lowest pressed fret of each voicing.  This is the dominant factor
+      in practice (any guitarist will tell you that crossing five frets
+      is far harder than nudging two fingers).  Weighted ``×3``.
+    * **Per-string motion** — for each string, the absolute change in
+      fret (or a flat ``1`` if the string toggles between mute and
+      sounded).  Captures finger-level continuity once the hand is in
+      position.
+
+    The hand-shift weight (3) was picked empirically so that ``C → F``
+    (E-shape barre at fret 1) is preferred over ``C → F`` at fret 8 by
+    an order of magnitude.  Tweakable if voice-leading defaults turn out
+    too aggressive in some direction.
+    """
+    hand_shift = abs(prev.min_pressed_fret - curr.min_pressed_fret)
+    string_motion = 0
+    for f1, f2 in zip(prev.frets, curr.frets):
+        if f1 is None and f2 is None:
+            continue
+        if f1 is None or f2 is None:
+            # A string switching between muted and sounded counts as one
+            # unit of motion — the equivalent of a one-fret move.
+            string_motion += 1
+        else:
+            string_motion += abs(f1 - f2)
+    return 3 * hand_shift + string_motion
+
+
+def pick_closest_index(
+    candidates: list[Voicing],
+    prev: Voicing | None,
+) -> int:
+    """Index into *candidates* of the voicing closest to *prev*.
+
+    With no previous voicing (start of a progression) the function
+    returns ``0`` — i.e. defers to the best-scored candidate.
+
+    Ties on distance are broken by preserving the candidates' incoming
+    score order: since :func:`find_voicings` returns its results sorted
+    best-first, the first candidate at the minimum distance is also the
+    best-scored one at that distance.
+    """
+    if not candidates:
+        raise ValueError("no candidates to pick from")
+    if prev is None:
+        return 0
+    distances = [voicing_distance(prev, c) for c in candidates]
+    return distances.index(min(distances))
+
+
 # --- Internals -----------------------------------------------------------
 
 @dataclass(frozen=True)
