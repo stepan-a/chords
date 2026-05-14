@@ -103,6 +103,23 @@
       cursor: pointer;
       user-select: none;
     }
+    .slider-with-value {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .slider-with-value input[type="range"] {
+      flex: 1;
+      min-width: 0;
+      accent-color: #1c1c1e;
+    }
+    .slider-with-value output {
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 13px;
+      color: #444;
+      min-width: 2ch;
+      text-align: right;
+    }
     #voicings {
       display: flex;
       flex-wrap: wrap;
@@ -245,6 +262,18 @@
         <span data-i18n="label_notes">Notes</span></label>
       <label><input type="radio" name="label-mode" value="none">
         <span data-i18n="label_none">Aucune</span></label>
+    </div>
+
+    <label class="title" for="positions-slider" data-i18n="positions_label">Positions</label>
+    <div class="slider-with-value">
+      <input type="range" id="positions-slider" min="1" max="16" value="8" step="1">
+      <output for="positions-slider">8</output>
+    </div>
+
+    <label class="title" for="variety-slider" data-i18n="variety_label">Variété</label>
+    <div class="slider-with-value">
+      <input type="range" id="variety-slider" min="0" max="12" value="5" step="1">
+      <output for="variety-slider">5</output>
     </div>
   </div>
 

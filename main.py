@@ -28,7 +28,12 @@ from chords import Chord, ChordParseError, parse
 from i18n import SUPPORTED_LANGUAGES, format_error, normalise, t
 from render import RenderOptions, render_voicing
 from tunings import ALL_TUNINGS, by_name
-from voicings import Voicing, find_voicings, pick_closest_index
+from voicings import (
+    SearchOptions,
+    Voicing,
+    find_voicings,
+    pick_closest_index,
+)
 
 
 # --- Language state ----------------------------------------------------
@@ -102,6 +107,31 @@ def _current_tuning():
     return by_name(name)
 
 
+def _search_options() -> SearchOptions:
+    """Read the two slider values and build a SearchOptions object.
+
+    Slider boundaries (mirroring the HTML attributes):
+      - positions-slider:  1..16, default 8
+      - variety-slider:    0..12, default 5  (mapped to min_diversity_distance)
+
+    When the variety slider sits at 0 we disable diversification entirely;
+    everything else just feeds the min_diversity_distance threshold.
+    """
+    try:
+        limit = int(document.getElementById("positions-slider").value)
+    except (TypeError, ValueError):
+        limit = 8
+    try:
+        variety = int(document.getElementById("variety-slider").value)
+    except (TypeError, ValueError):
+        variety = 5
+    return SearchOptions(
+        limit=max(1, limit),
+        diversify=(variety > 0),
+        min_diversity_distance=max(0, variety),
+    )
+
+
 # --- Progression update -----------------------------------------------
 
 def update_progression() -> None:
@@ -115,9 +145,10 @@ def update_progression() -> None:
         except KeyError:
             tuning = ALL_TUNINGS[0]  # fall back to standard
 
+        search_opts = _search_options()
         new_state: list[ChordSlot] = []
         for i, sym in enumerate(symbols):
-            slot = _build_slot(sym, tuning, previous=_get(i))
+            slot = _build_slot(sym, tuning, search_opts, previous=_get(i))
             new_state.append(slot)
 
         _progression[:] = new_state
@@ -155,26 +186,52 @@ def _get(index: int) -> ChordSlot | None:
 def _build_slot(
     symbol: str,
     tuning,
+    search_opts: SearchOptions,
     previous: ChordSlot | None,
 ) -> ChordSlot:
-    """Build a slot for one chord symbol, preserving user state when relevant."""
+    """Build a slot for one chord symbol, preserving user state when relevant.
+
+    Carrying over ``is_user_picked`` across rebuilds (triggered by tuning,
+    label-mode or slider changes) needs care: the index of a user-picked
+    voicing can shift — or disappear — when the candidate list is
+    recomputed with new parameters. We look up the previous active voicing
+    by fret pattern in the new list. If it still exists, we re-anchor on
+    that shape. If it's gone (e.g. the user lowered the limit slider
+    below where their pick used to sit), we drop the user pick and fall
+    back to the default cascade.
+    """
     try:
         chord = parse(symbol)
     except ChordParseError as e:
         return ChordSlot(symbol=symbol, chord=None, error=str(e))
 
-    voicings = find_voicings(chord, tuning)
+    voicings = find_voicings(chord, tuning, search_opts)
 
-    # If this slot used to hold the same symbol, preserve user-picked
-    # state and active index (clamped to the new voicings list).
     active_index = 0
     is_user_picked = False
     expanded = False
-    if previous is not None and previous.symbol == symbol and previous.chord is not None:
-        if voicings:
-            active_index = min(previous.active_index, len(voicings) - 1)
-        is_user_picked = previous.is_user_picked
+    if (
+        previous is not None
+        and previous.symbol == symbol
+        and previous.chord is not None
+        and voicings
+    ):
         expanded = previous.expanded
+        if previous.is_user_picked and previous.voicings:
+            target_shape = previous.voicings[previous.active_index].frets
+            new_idx = next(
+                (i for i, v in enumerate(voicings) if v.frets == target_shape),
+                None,
+            )
+            if new_idx is not None:
+                active_index = new_idx
+                is_user_picked = True
+            # else: the user-picked voicing is no longer available,
+            # so we fall through to the default cascade.
+        else:
+            # No manual pick to preserve; the cascade will overwrite the
+            # active index anyway, but we still clamp defensively.
+            active_index = min(previous.active_index, len(voicings) - 1)
 
     return ChordSlot(
         symbol=symbol,
@@ -371,6 +428,32 @@ def _on_tuning_change(event):
 def _on_label_change(event):
     # Only the SVG rendering changes; voicings and active indices stay.
     _render()
+
+
+@when("input", "#positions-slider")
+def _on_positions_input(event):
+    _sync_slider_output("positions-slider")
+    update_progression()
+
+
+@when("input", "#variety-slider")
+def _on_variety_input(event):
+    _sync_slider_output("variety-slider")
+    update_progression()
+
+
+def _sync_slider_output(slider_id: str) -> None:
+    """Mirror a slider's current value into the adjacent <output>.
+
+    The two are linked semantically via the ``for`` attribute on the
+    <output>, but browsers don't update it automatically — we do it
+    in Python so the user sees the live value while dragging.
+    """
+    slider = document.getElementById(slider_id)
+    out = document.querySelector(f'output[for="{slider_id}"]')
+    if slider is None or out is None:
+        return
+    out.textContent = slider.value
 
 
 @when("click", ".lang-switcher button")

@@ -40,6 +40,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "lang_label": "Langue :",
         "alternatives_hint": "Clique sur une position pour la sélectionner.",
+        "variety_label": "Variété",
+        "positions_label": "Positions",
     },
     "en": {
         "page_title": "Guitar chord diagrams",
@@ -66,6 +68,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "lang_label": "Language:",
         "alternatives_hint": "Click a position to select it.",
+        "variety_label": "Variety",
+        "positions_label": "Positions",
     },
 }
 
