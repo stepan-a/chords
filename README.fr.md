@@ -1,4 +1,5 @@
-<!-- 🌐 [English](README.md) · **Français** -->
+[![English](https://img.shields.io/badge/lang-English-lightgrey?style=flat-square)](README.md)
+![Français](https://img.shields.io/badge/lang-Fran%C3%A7ais-005AB4?style=flat-square)
 
 # Accords — diagrammes d'accords pour guitare
 

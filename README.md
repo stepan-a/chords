@@ -1,4 +1,5 @@
-<!-- 🌐 **English** · [Français](README.fr.md) -->
+![English](https://img.shields.io/badge/lang-English-005AB4?style=flat-square)
+[![Français](https://img.shields.io/badge/lang-Fran%C3%A7ais-lightgrey?style=flat-square)](README.fr.md)
 
 # Chords — guitar chord diagrams
 
