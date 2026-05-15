@@ -21,8 +21,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+import js
 from js import localStorage, navigator
 from pyscript import document, when
+from pyscript.ffi import create_proxy
 
 from chords import Chord, ChordParseError, parse
 from i18n import SUPPORTED_LANGUAGES, format_error, normalise, t
@@ -60,6 +62,30 @@ def _save_language(lang: str) -> None:
         localStorage.setItem(_STORAGE_KEY, lang)
     except Exception:
         pass
+
+
+# --- Debouncing -------------------------------------------------------
+#
+# A keystroke in the chord field, or a fingertip dragging the variety
+# slider, fires the `input` event on every pixel. Each of those
+# triggers update_progression() which can take 100–200 ms on mobile —
+# without coalescing we burn through events faster than they can be
+# processed and the UI lags.
+#
+# debounce(key, fn, delay_ms) schedules `fn` to run after `delay_ms`
+# of quiet. A new call with the same key cancels the previously-
+# pending timer, so only the final event in a burst actually runs.
+# Each event source has its own key so chord-input and slider
+# debounces don't interfere with each other.
+
+_DEBOUNCE_TIMERS: dict[str, int] = {}
+
+
+def debounce(key: str, fn, delay_ms: int) -> None:
+    pending = _DEBOUNCE_TIMERS.get(key)
+    if pending is not None:
+        js.clearTimeout(pending)
+    _DEBOUNCE_TIMERS[key] = js.setTimeout(create_proxy(fn), delay_ms)
 
 
 # --- Progression state -------------------------------------------------
@@ -416,7 +442,10 @@ document.getElementById("loading").classList.add("hidden")
 
 @when("input", "#chord-input")
 def _on_chord_input(event):
-    update_progression()
+    # Slightly more debouncing on the chord field because half-typed
+    # chord symbols ("Cm" mid-typing "Cmaj7") routinely fail to parse,
+    # so we'd flash an error to the user between each pair of keystrokes.
+    debounce("chord", update_progression, 200)
 
 
 @when("change", "#tuning-select")
@@ -433,13 +462,13 @@ def _on_label_change(event):
 @when("input", "#positions-slider")
 def _on_positions_input(event):
     _sync_slider_output("positions-slider")
-    update_progression()
+    debounce("slider", update_progression, 120)
 
 
 @when("input", "#variety-slider")
 def _on_variety_input(event):
     _sync_slider_output("variety-slider")
-    update_progression()
+    debounce("slider", update_progression, 120)
 
 
 def _sync_slider_output(slider_id: str) -> None:

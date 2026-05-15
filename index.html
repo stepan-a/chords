@@ -215,6 +215,97 @@
       padding: 24px;
       text-align: center;
     }
+
+    /* ---- Tap feedback ----
+       :hover only fires for pointing devices; :active fires on press
+       (mouse) AND on tap (touch), so this is what lights up under a
+       fingertip on a phone. Subtle on purpose. */
+    .lang-switcher button:active {
+      opacity: 0.75;
+    }
+    .voicing.active:active,
+    .voicing.alternative:active {
+      background-color: #e8eef7;
+      transform: scale(0.98);
+    }
+
+    /* ---- Mobile layout ----
+       One breakpoint at 720px catches phones in either orientation and
+       tablets in portrait. */
+    @media (max-width: 720px) {
+      body {
+        padding: 16px;
+      }
+      h1 {
+        font-size: 20px;
+      }
+      .lead {
+        font-size: 13px;
+      }
+
+      /* Stack control rows vertically: label on top, control below. */
+      .controls {
+        grid-template-columns: 1fr;
+        gap: 6px;
+        padding: 12px 14px;
+      }
+      .controls label.title {
+        margin-top: 6px;
+        margin-bottom: -2px;
+      }
+
+      /* iOS Safari zooms the viewport as soon as a focused input has a
+         font-size under 16px. Bumping all text controls to 16px keeps
+         the page steady when the user taps the chord field. */
+      input[type="text"],
+      select {
+        font-size: 16px;
+        padding: 10px 12px;
+      }
+
+      /* Larger language-switcher buttons (Apple HIG / Material both
+         recommend ~44 px tall touch targets). */
+      .lang-switcher button {
+        padding: 8px 14px;
+        font-size: 14px;
+      }
+
+      /* Radio labels need padding for thumb-friendly tapping. */
+      .radio-group {
+        flex-wrap: wrap;
+        gap: 10px 14px;
+      }
+      .radio-group label {
+        padding: 4px 0;
+      }
+
+      /* Slider thumb easier to grab. */
+      input[type="range"] {
+        height: 28px;
+      }
+
+      /* Collapsed chord tiles: two per row on a phone (~360–430 px
+         wide). When a tile expands to show alternatives, let it take
+         the full width so the grid of alternatives stays readable. */
+      #voicings {
+        gap: 10px;
+      }
+      .chord-slot {
+        max-width: calc(50% - 5px);
+        box-sizing: border-box;
+      }
+      .chord-slot.expanded {
+        max-width: 100%;
+        width: 100%;
+      }
+      .chord-slot .voicing svg {
+        width: 100%;
+      }
+      /* On a phone the alternatives grid wants only two columns. */
+      .alternatives {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
   </style>
 </head>
 <body>
