@@ -17,6 +17,15 @@ default:
   tags:
     - stepan@puck
 
+# Refuse to build for anything that isn't the canonical repository.
+# If someone forks stepan/chords on the same GitLab instance, the fork
+# would otherwise share these runners and could trigger a deploy to
+# /puck/www/chords.ithaca.fr. With this rule, no pipeline is created
+# at all for any other project path.
+workflow:
+  rules:
+    - if: $CI_PROJECT_PATH == "stepan/chords"
+
 stages:
   - test
   - deploy
@@ -51,7 +60,11 @@ test:
 deploy:
   stage: deploy
   rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    # Belt and braces: the workflow rule already keeps forks out of
+    # the pipeline entirely, but re-asserting the project path here
+    # means a future relaxation of that rule (e.g. to let forks run
+    # the test job) still can't accidentally deploy from a fork.
+    - if: $CI_PROJECT_PATH == "stepan/chords" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   script:
     - install -d -m 0755 "$TARGET_DIR"
     - >
