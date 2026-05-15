@@ -42,6 +42,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "alternatives_hint": "Clique sur une position pour la sélectionner.",
         "variety_label": "Variété",
         "positions_label": "Positions",
+        "share_label": "Partager",
+        "share_title": "Diagrammes d'accords",
+        "share_copied": "Lien copié !",
+        "share_failed": "Copie impossible",
     },
     "en": {
         "page_title": "Guitar chord diagrams",
@@ -70,6 +74,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "alternatives_hint": "Click a position to select it.",
         "variety_label": "Variety",
         "positions_label": "Positions",
+        "share_label": "Share",
+        "share_title": "Chord diagrams",
+        "share_copied": "Link copied!",
+        "share_failed": "Copy failed",
     },
 }
 

@@ -26,7 +26,7 @@ from urllib.parse import parse_qsl, urlencode
 import js
 from js import localStorage, navigator
 from pyscript import document, when
-from pyscript.ffi import create_proxy
+from pyscript.ffi import create_proxy, to_js
 
 from chords import Chord, ChordParseError, parse
 from i18n import SUPPORTED_LANGUAGES, format_error, normalise, t
@@ -634,6 +634,58 @@ def _on_lang_change(event):
     apply_translations()
     _render()  # so per-slot notes/error captions pick up the new language
     _persist_state()
+
+
+# --- Sharing ----------------------------------------------------------
+#
+# The URL fragment is kept in sync by _persist_state(), so the canonical
+# shareable URL is just window.location.href at any moment. The button
+# tries the native Web Share API first (which on Android and iOS opens
+# the OS share sheet — Messages, Mail, WhatsApp, etc.) and falls back
+# to clipboard.writeText on desktop or wherever Web Share is missing.
+
+@when("click", "#share-button")
+async def _on_share_click(event):
+    url = js.window.location.href
+    nav = js.navigator
+
+    # 1. Native share sheet — Android, iOS Safari, recent macOS Safari.
+    if getattr(nav, "share", None) is not None:
+        try:
+            payload = to_js({
+                "title": t(_lang, "share_title"),
+                "url": url,
+            })
+            await nav.share(payload)
+            return
+        except Exception:
+            # User cancelled the share, or the platform refused
+            # (e.g. share required user activation which we lost
+            # crossing the await). Fall through to clipboard.
+            pass
+
+    # 2. Clipboard fallback — desktop browsers, restricted contexts.
+    try:
+        await nav.clipboard.writeText(url)
+        _flash_share_feedback(t(_lang, "share_copied"), error=False)
+    except Exception:
+        _flash_share_feedback(t(_lang, "share_failed"), error=True)
+
+
+def _flash_share_feedback(message: str, error: bool, duration_ms: int = 2500) -> None:
+    """Briefly show *message* next to the share button, then fade it out."""
+    el = document.getElementById("share-feedback")
+    if el is None:
+        return
+    el.textContent = message
+    el.classList.remove("error")
+    if error:
+        el.classList.add("error")
+    el.classList.add("visible")
+
+    def _hide():
+        el.classList.remove("visible")
+    js.setTimeout(create_proxy(_hide), duration_ms)
 
 
 @when("click", "#voicings")
