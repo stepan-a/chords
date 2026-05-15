@@ -18,8 +18,10 @@ in the progression moves).
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
+from urllib.parse import parse_qsl, urlencode
 
 import js
 from js import localStorage, navigator
@@ -38,15 +40,40 @@ from voicings import (
 )
 
 
-# --- Language state ----------------------------------------------------
+# --- Persistent UI state ----------------------------------------------
+#
+# The user's current configuration (progression text, tuning, slider
+# values, label mode, language) lives in two places:
+#
+#   * localStorage under `chord-app-state` — survives reloads.
+#   * The URL fragment (#chord=…&tuning=…&…) — survives copy-paste and
+#     makes the configuration shareable as a link.
+#
+# When both are present at page load, the **URL fragment wins**: it
+# represents an explicit "open with this config" intent. The fragment
+# is updated on every change so the user can always grab the address
+# bar and send the link.
+#
+# The legacy single-key `chord-app-lang` localStorage entry written by
+# older versions is read as a fallback so existing visitors keep their
+# language preference; we don't write to it any more.
 
-_STORAGE_KEY = "chord-app-lang"
+_STATE_KEY = "chord-app-state"
+_LEGACY_LANG_KEY = "chord-app-lang"
+
+_VALID_LABEL_MODES = ("fingers", "degrees", "notes", "none")
 
 
 def _initial_language() -> str:
+    """Default language used before state restoration runs.
+
+    Reads the legacy single-key storage and falls back to the browser's
+    Accept-Language list; the unified state restorer can still override
+    this when it runs.
+    """
     saved = None
     try:
-        saved = localStorage.getItem(_STORAGE_KEY)
+        saved = localStorage.getItem(_LEGACY_LANG_KEY)
     except Exception:
         saved = None
     if saved in SUPPORTED_LANGUAGES:
@@ -57,11 +84,121 @@ def _initial_language() -> str:
 _lang: str = _initial_language()
 
 
-def _save_language(lang: str) -> None:
+def _ui_state() -> dict:
+    """Snapshot every persisted UI control's current value.
+
+    Returns plain strings (not the active-voicing tuple of integers,
+    which is per-render state that we don't persist).
+    """
+    return {
+        "chord": document.getElementById("chord-input").value,
+        "tuning": document.getElementById("tuning-select").value,
+        "label": _label_mode(),
+        "positions": document.getElementById("positions-slider").value,
+        "variety": document.getElementById("variety-slider").value,
+        "lang": _lang,
+    }
+
+
+def _apply_ui_state(state: dict) -> None:
+    """Push a restored or shared state dict back into the DOM controls.
+
+    Every value is validated before being applied so a malformed URL
+    fragment (or a stale localStorage entry from an older schema) can
+    only leave the controls in a state already representable by the
+    HTML defaults.
+    """
+    global _lang
+
+    if isinstance(state.get("chord"), str):
+        document.getElementById("chord-input").value = state["chord"]
+
+    tuning = state.get("tuning")
+    if isinstance(tuning, str) and tuning in {t.name for t in ALL_TUNINGS}:
+        document.getElementById("tuning-select").value = tuning
+
+    label = state.get("label")
+    if label in _VALID_LABEL_MODES:
+        for radio in document.querySelectorAll('input[name="label-mode"]'):
+            radio.checked = (radio.value == label)
+
+    positions = state.get("positions")
+    if positions is not None:
+        try:
+            n = int(positions)
+        except (TypeError, ValueError):
+            n = None
+        if n is not None and 1 <= n <= 16:
+            document.getElementById("positions-slider").value = str(n)
+            _sync_slider_output("positions-slider")
+
+    variety = state.get("variety")
+    if variety is not None:
+        try:
+            n = int(variety)
+        except (TypeError, ValueError):
+            n = None
+        if n is not None and 0 <= n <= 12:
+            document.getElementById("variety-slider").value = str(n)
+            _sync_slider_output("variety-slider")
+
+    lang = state.get("lang")
+    if isinstance(lang, str) and lang in SUPPORTED_LANGUAGES:
+        _lang = lang
+
+
+def _state_from_url() -> dict | None:
+    """Parse the URL fragment as `key=value&…` if any keys are present."""
+    raw = js.window.location.hash
+    if not isinstance(raw, str) or not raw:
+        return None
+    if raw.startswith("#"):
+        raw = raw[1:]
+    if not raw:
+        return None
+    parsed = dict(parse_qsl(raw, keep_blank_values=True))
+    return parsed or None
+
+
+def _state_from_storage() -> dict | None:
+    """Read the JSON blob from localStorage, ignoring corrupted entries."""
     try:
-        localStorage.setItem(_STORAGE_KEY, lang)
+        raw = localStorage.getItem(_STATE_KEY)
+    except Exception:
+        return None
+    if not raw:
+        return None
+    try:
+        loaded = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    return loaded if isinstance(loaded, dict) else None
+
+
+def _persist_state() -> None:
+    """Write current UI state to localStorage and to the URL fragment.
+
+    Called at the end of every render pass; both writes are best-effort
+    (private-mode browsers may refuse localStorage; some embeddings may
+    refuse history.replaceState).
+    """
+    state = _ui_state()
+    try:
+        localStorage.setItem(_STATE_KEY, json.dumps(state))
     except Exception:
         pass
+    try:
+        new_hash = "#" + urlencode(state)
+        js.window.history.replaceState(None, "", new_hash)
+    except Exception:
+        pass
+
+
+def _restore_state() -> None:
+    """Apply state from the URL fragment if any, else from localStorage."""
+    state = _state_from_url() or _state_from_storage()
+    if state:
+        _apply_ui_state(state)
 
 
 # --- Debouncing -------------------------------------------------------
@@ -180,6 +317,7 @@ def update_progression() -> None:
         _progression[:] = new_state
         _cascade_defaults()
         _render()
+        _persist_state()
     except Exception as exc:
         _show_fatal_error(exc)
 
@@ -457,6 +595,7 @@ def _on_tuning_change(event):
 def _on_label_change(event):
     # Only the SVG rendering changes; voicings and active indices stay.
     _render()
+    _persist_state()
 
 
 @when("input", "#positions-slider")
@@ -492,9 +631,9 @@ def _on_lang_change(event):
     if new_lang not in SUPPORTED_LANGUAGES or new_lang == _lang:
         return
     _lang = new_lang
-    _save_language(_lang)
     apply_translations()
     _render()  # so per-slot notes/error captions pick up the new language
+    _persist_state()
 
 
 @when("click", "#voicings")
@@ -520,6 +659,13 @@ def _on_voicings_click(event):
 
 
 # --- Initial render ---------------------------------------------------
+#
+# Order matters: state restoration may overwrite the default language,
+# so we apply translations *after* it. The initial update_progression()
+# then runs against the restored controls and re-persists the result
+# (which writes the canonical URL fragment if the page was opened
+# without one).
 
+_restore_state()
 apply_translations()
 update_progression()
