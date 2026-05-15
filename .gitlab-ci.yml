@@ -1,0 +1,69 @@
+# GitLab CI: run the test suite, then rsync the runtime assets into
+# the Apache document root that serves https://chords.ithaca.fr.
+#
+# Server prerequisites (one-off setup, root):
+#
+#   sudo install -d -o gitlab-runner -g gitlab-runner -m 0755 \
+#       /puck/www/chords.ithaca.fr
+#
+#   # `gitlab-runner` is the user the runner runs as — adjust if your
+#   # runner runs under a different account.
+#
+#   # python3, pip and rsync must be on PATH for the runner user.
+#   # Apache2's VirtualHost for chords.ithaca.fr must serve this
+#   # directory (see README → "Serving online with Apache2").
+
+default:
+  tags:
+    - stepan@puck
+
+stages:
+  - test
+  - deploy
+
+variables:
+  TARGET_DIR: /puck/www/chords.ithaca.fr
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIP_NO_INPUT: "1"
+
+# --- 1. Unit tests --------------------------------------------------------
+# A failing test stops the pipeline before deploy gets a chance to run.
+
+test:
+  stage: test
+  script:
+    - python3 -m venv .venv
+    - . .venv/bin/activate
+    - pip install --quiet pytest
+    - pytest tests/
+
+# --- 2. Deploy ------------------------------------------------------------
+# Only the runtime artefacts the browser actually fetches:
+#
+#   * index.html, main.py, pyscript.toml at the document root
+#   * the modules under src/*.py
+#
+# Everything else (tests, scripts, pyproject.toml, READMEs, .git,
+# .venv, __pycache__, …) is filtered out by rsync's include/exclude
+# chain — and `--delete` removes any stale file in the target that
+# no longer exists in the repository.
+
+deploy:
+  stage: deploy
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - install -d -m 0755 "$TARGET_DIR"
+    - >
+      rsync -av --delete
+      --chmod=D0755,F0644
+      --include='/index.html'
+      --include='/main.py'
+      --include='/pyscript.toml'
+      --include='/src/'
+      --include='/src/*.py'
+      --exclude='*'
+      ./ "$TARGET_DIR/"
+  environment:
+    name: production
+    url: https://chords.ithaca.fr
