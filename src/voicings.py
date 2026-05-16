@@ -196,9 +196,14 @@ def find_voicings(
     )
 
     # 5. Sort + dedup by exact shape + filter dominated + limit.
+    #
+    # The sort key tie-breaks identically-scored voicings by ease of
+    # playing: fewer fingers first, then lower fret. Without it, IEEE-754
+    # rounding noise can flip a 4-finger fret-5 grip ahead of the 1-finger
+    # open shape they're nominally tied with.
     seen_shapes: set[tuple[int | None, ...]] = set()
     deduped: list[Voicing] = []
-    for v in sorted(found, key=lambda v: v.score):
+    for v in sorted(found, key=_voicing_rank_key):
         if v.shape_key() in seen_shapes:
             continue
         seen_shapes.add(v.shape_key())
@@ -211,6 +216,17 @@ def find_voicings(
             filtered, options.limit, options.min_diversity_distance
         )
     return filtered[: options.limit]
+
+
+def _voicing_rank_key(v: Voicing) -> tuple[float, int, int]:
+    """Sort key used wherever voicings are ordered ‘best first’.
+
+    Score primary (rounded so IEEE-754 rounding noise never decides the
+    order), then fingers, then ``min_pressed_fret``. When two voicings
+    score within rounding distance of each other, the easier-to-play
+    and lower-on-the-neck one wins. The scorer's weights are all
+    rational multiples of ``0.05`` so four decimal places is plenty."""
+    return (round(v.score, 4), v.fingers, v.min_pressed_fret)
 
 
 def _drop_subsets(voicings: list[Voicing]) -> list[Voicing]:
@@ -283,25 +299,31 @@ def _dedup_by_fingering(
     chord: Chord,
 ) -> list[Voicing]:
     """Collapse voicings that share the same set of pressed (string, fret)
-    pairs.
+    pairs *and* the same bass note.
 
-    From a player's point of view two voicings with the same pressed
-    positions are the *same shape* on the neck — the only differences
-    (which strings are left open vs muted) are right-hand decisions, not
-    different fingerings. Listing both wastes a slot and makes the user
-    think two diagrams are duplicates.
+    Two voicings with identical pressed positions but different bass
+    notes are *different chords* (e.g. ``x 4 2 2 2 0`` with C# in the
+    bass and ``0 4 2 2 2 0`` with E in the bass for A — same shape on
+    strings 1–5, but the lower string flips the inversion). We bucket
+    them separately so each survives.
 
-    Example: ``x02210`` (open Am) and ``002210`` (the same shape with
-    the low E ringing as a 5th in the bass) collapse to a single
-    representative; we keep the one with the root in the bass.
+    When two voicings collide on this key, the canonical is the one
+    that puts the root in the bass (preferred), then the one with more
+    sounding strings, then the one with the better score.
+
+    Example collapsed pair: ``x02210`` (open Am, root in bass) and
+    ``002210`` (same fingering, E in the bass) only collide if both
+    reach the dedup — under the default ``inversions_only=False`` the
+    inversion is filtered upstream so only one of them is ever seen
+    here anyway.
     """
     root_pc = chord.root.pitch_class
     canonical: dict[tuple, Voicing] = {}
     for v in voicings:
-        sig = _fingering_signature(v)
-        existing = canonical.get(sig)
+        key = (_fingering_signature(v), _bass_pc(v))
+        existing = canonical.get(key)
         if existing is None or _better_canonical(v, existing, root_pc):
-            canonical[sig] = v
+            canonical[key] = v
     kept_ids = {id(v) for v in canonical.values()}
     return [v for v in voicings if id(v) in kept_ids]
 
@@ -344,54 +366,67 @@ def _diversify(
     target: int,
     min_distance: int,
 ) -> list[Voicing]:
-    """Pick ``target`` voicings that are visually distinct from each other.
+    """Pick ``target`` voicings, round-robin across distinct bass notes.
 
-    Uses :func:`voicing_distance` as the similarity metric. A two-pass
-    greedy algorithm:
+    The algorithm groups the score-sorted candidates by their bass
+    pitch class, then takes one from each group in turn until the
+    target count is reached. Within a group, voicings that are too
+    similar (per :func:`_diversity_distance`) to a higher-scored
+    sibling are dropped so each bass doesn't surface five near-clones.
 
-    1.  **Distinct pass.** Walk the score-sorted candidates and accept
-        each one only if its :func:`voicing_distance` to *every*
-        already-picked voicing is at least ``min_distance``. This kills
-        both kinds of redundancy:
+    The output order is *not* purely by score — it interleaves the
+    bass notes. For a plain chord with the root in the bass (the
+    default mode), there's only one group and the result reads
+    best-to-worst by score. For inversions-only mode on a chord with
+    several reachable bass notes (say E and C# for A), the result
+    alternates: best-E, best-C#, second-best-E, second-best-C#,
+    third-best-E, … This guarantees every inversion shows up early
+    rather than after all positions of the dominant bass.
 
-        * Near-duplicates at the same fret region (e.g. F barre at fret 1
-          with various strings muted) — these have low pairwise distance.
-        * Multiple variants of the same shape transposed in tiny steps.
-
-        It also naturally produces neck coverage because crossing a few
-        frets adds heavy hand-shift contribution to the distance.
-
-    2.  **Fill pass.** If the distinct pass came up short (typical when
-        ``min_distance`` is large or the chord has few candidates), top
-        up from the best-scored leftovers without the distance
-        requirement, so the user always sees ``target`` tiles.
-
-    Results are returned in score order, so the best voicing remains
-    first regardless of where it sits on the neck.
+    The first voicing is always the strongest of the strongest group,
+    so the canonical pick still leads the list.
     """
     if not voicings or target <= 0:
         return []
 
-    picked: list[Voicing] = [voicings[0]]
+    # Group candidates by bass pitch class, preserving the score order
+    # already present in the input.
+    groups: dict[int | None, list[Voicing]] = {}
+    for v in voicings:
+        groups.setdefault(_bass_pc(v), []).append(v)
 
-    # 1. Distinct pass.
-    for v in voicings[1:]:
-        if len(picked) >= target:
+    # Within each bass-pc group, drop voicings that sit too close to a
+    # higher-scored sibling. The bass-pc bonus inside
+    # _diversity_distance never fires here because all members share
+    # a bass, so the check reduces to pure voicing_distance comparisons.
+    deduped_groups: list[list[Voicing]] = []
+    for group in groups.values():
+        kept = [group[0]]
+        for v in group[1:]:
+            if all(_diversity_distance(v, p) >= min_distance for p in kept):
+                kept.append(v)
+        deduped_groups.append(kept)
+
+    # Order the groups so the strongest-best-scored bass leads the
+    # round-robin. The first output voicing is therefore the overall
+    # best — what the player would expect under the score column.
+    deduped_groups.sort(key=lambda g: _voicing_rank_key(g[0]))
+
+    # Round-robin: one from each group per cycle, until we have `target`.
+    picked: list[Voicing] = []
+    cursors = [0] * len(deduped_groups)
+    while len(picked) < target:
+        progress = False
+        for i, group in enumerate(deduped_groups):
+            if cursors[i] < len(group):
+                picked.append(group[cursors[i]])
+                cursors[i] += 1
+                progress = True
+                if len(picked) >= target:
+                    break
+        if not progress:
             break
-        if all(_diversity_distance(v, p) >= min_distance for p in picked):
-            picked.append(v)
 
-    # 2. Fill pass with best-scored leftovers.
-    if len(picked) < target:
-        picked_ids = {id(p) for p in picked}
-        for v in voicings:
-            if id(v) in picked_ids:
-                continue
-            picked.append(v)
-            if len(picked) >= target:
-                break
-
-    picked.sort(key=lambda v: v.score)
     return picked
 
 
@@ -446,17 +481,17 @@ def _diversity_distance(a: Voicing, b: Voicing) -> int:
     """Distance metric used specifically for diversification.
 
     Built on top of :func:`voicing_distance` but adds a heavy penalty
-    when the two voicings have different bass strings. Bass changes
-    are aurally striking (root-position vs. inversion vs. 5-in-bass)
-    even when the rest of the fretting hardly moves; without this
-    boost, two voicings whose only difference is whether a low string
-    is muted or sounded — like Open G's ``x00000`` (G in the bass)
-    versus ``000000`` (D in the bass) — are at distance 1, and one
-    of them gets rejected as a near-duplicate even though they're
-    distinct chords sonically.
+    when the two voicings have different bass *notes* (pitch classes).
+    Bass changes are aurally striking — root-position vs first vs
+    second inversion sound noticeably different even when the fingers
+    barely move — so we want diversification to never collapse two
+    voicings with different bass notes into one. Without this boost,
+    Open G's ``x00000`` (G in the bass) and ``000000`` (D in the bass)
+    sit at distance 1 (one mute toggle), and one would be filtered as
+    a near-duplicate even though they are distinct chords.
     """
     base = voicing_distance(a, b)
-    if _bass_index(a) != _bass_index(b):
+    if _bass_pc(a) != _bass_pc(b):
         base += 10
     return base
 
