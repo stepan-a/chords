@@ -95,12 +95,19 @@ class SearchOptions:
     """If True, muted strings between sounding strings are allowed but
     penalized; if False, sounding strings must be a contiguous block."""
 
-    allow_inversions: bool = False
-    """When False (the default), the chord's root must be in the bass.
-    Slash chords (e.g. ``D/F#``) always force the explicit bass and
-    ignore this option — picking an inversion is the whole point of
-    asking for one. Setting this to True lets the search return any
-    voicing whose lowest sounding string is a chord tone."""
+    inversions_only: bool = False
+    """When False (the default), the chord's root must be in the bass —
+    only root-position voicings are returned. When True, the search
+    returns *only* inversions: voicings whose lowest sounding string is
+    a chord tone other than the root.
+
+    The flag is binary: False yields no inversions, True yields nothing
+    *but* inversions. There is no "mixed" mode — a UI that wants both
+    can call :func:`find_voicings` twice and concatenate.
+
+    Slash chords (e.g. ``D/F#``) always force their explicit bass and
+    ignore this option — asking for a specific bass is itself an
+    explicit "I want this inversion" statement."""
 
     limit: int = 8
     """Maximum number of voicings to return."""
@@ -143,21 +150,21 @@ def find_voicings(
     #   - Slash chord (``C/E``): the explicit bass is mandatory and
     #     overrides everything else — picking an inversion is the
     #     whole point of writing one.
-    #   - ``allow_inversions=False`` (default): force the chord's root
-    #     in the bass, so inversions don't pollute the candidate list.
-    #   - ``allow_inversions=True``: any chord tone may sit in the
-    #     bass; the scorer still rewards root-position when picking
-    #     the canonical voicing.
+    #   - ``inversions_only=True``: bass_pc stays None so the slash
+    #     check doesn't fire, and _search applies the inverse rule
+    #     (reject voicings whose bass IS the root) instead.
+    #   - default: force the chord's root in the bass — only
+    #     root-position voicings are returned.
     bass_pc: int | None
     if chord.bass is not None:
         bass_pc = chord.bass.pitch_class
         # The bass note itself must be reachable on some string somewhere;
         # add it to all_pcs even if it duplicates a chord tone.
         all_pcs = all_pcs | {bass_pc}
-    elif not options.allow_inversions:
-        bass_pc = chord.root.pitch_class
+    elif options.inversions_only:
+        bass_pc = None  # any chord tone but the root; enforced in _search
     else:
-        bass_pc = None  # any chord tone may be in the bass; root preferred.
+        bass_pc = chord.root.pitch_class
 
     # 3. Per-string candidate frets.
     candidates_per_string: list[list[_StringChoice]] = []
@@ -571,6 +578,17 @@ def _search(
             return  # all muted; can't happen if min_sounding_strings >= 1
         actual_bass_pc = choices[lowest_sounding_idx].pitch_class
         if bass_pc is not None and actual_bass_pc != bass_pc:
+            return
+
+        # 3b. Inversions-only mode: reject voicings whose bass *is* the
+        # root. Slash chords already short-circuit through the `bass_pc`
+        # check above, so this only fires when the user explicitly asked
+        # for inversions without specifying which one.
+        if (
+            options.inversions_only
+            and chord.bass is None
+            and actual_bass_pc == chord.root.pitch_class
+        ):
             return
 
         # 4. Skip-strings hard constraint (if disabled).

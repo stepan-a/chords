@@ -130,6 +130,24 @@
       cursor: pointer;
       user-select: none;
     }
+    .toggle-row {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 16px;
+      font-size: 13px;
+      align-items: center;
+    }
+    .toggle-row label {
+      cursor: pointer;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .toggle-row input[type="checkbox"] {
+      accent-color: #1c1c1e;
+      cursor: pointer;
+    }
     .slider-with-value {
       display: flex;
       align-items: center;
@@ -299,11 +317,13 @@
       }
 
       /* Radio labels need padding for thumb-friendly tapping. */
-      .radio-group {
+      .radio-group,
+      .toggle-row {
         flex-wrap: wrap;
         gap: 10px 14px;
       }
-      .radio-group label {
+      .radio-group label,
+      .toggle-row label {
         padding: 4px 0;
       }
 
@@ -385,6 +405,11 @@
         <span data-i18n="label_notes">Notes</span></label>
       <label><input type="radio" name="label-mode" value="none">
         <span data-i18n="label_none">Aucune</span></label>
+    </div>
+
+    <div class="toggle-row">
+      <label><input type="checkbox" id="inversions-toggle">
+        <span data-i18n="inversions_label">Renversements</span></label>
     </div>
 
     <label class="title" for="positions-slider" data-i18n="positions_label">Positions</label>

@@ -205,8 +205,16 @@ def render_voicing(
     voicing: Voicing,
     chord: Chord,
     options: RenderOptions | None = None,
+    title_override: str | None = None,
 ) -> str:
-    """Return a complete ``<svg>…</svg>`` element string for the voicing."""
+    """Return a complete ``<svg>…</svg>`` element string for the voicing.
+
+    ``title_override`` replaces the chord-name title drawn above the
+    diagram. The caller uses it to swap in the slash notation (e.g.
+    ``"F/C"`` instead of ``"F"``) when the active voicing is an
+    inversion — the chord's intervals and spelling are unchanged, only
+    the displayed name differs.
+    """
 
     o = options or RenderOptions()
 
@@ -254,7 +262,11 @@ def render_voicing(
 
     # --- Chord name (title) + optional fret-number marker on the right ---
     if o.show_chord_name:
-        title = chord.symbol or _fallback_symbol(chord)
+        title = (
+            title_override
+            if title_override is not None
+            else (chord.symbol or _fallback_symbol(chord))
+        )
         cx = grid_x0 + grid_w / 2
         cy = pad + o.title_size
         parts.append(

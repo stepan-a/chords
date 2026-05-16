@@ -46,6 +46,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "share_title": "Diagrammes d'accords",
         "share_copied": "Lien copié !",
         "share_failed": "Copie impossible",
+        "inversions_label": "Renversements",
+        "bass_label": "basse",
     },
     "en": {
         "page_title": "Guitar chord diagrams",
@@ -78,6 +80,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "share_title": "Chord diagrams",
         "share_copied": "Link copied!",
         "share_failed": "Copy failed",
+        "inversions_label": "Inversions",
+        "bass_label": "bass",
     },
 }
 

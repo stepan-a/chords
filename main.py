@@ -96,6 +96,7 @@ def _ui_state() -> dict:
         "label": _label_mode(),
         "positions": document.getElementById("positions-slider").value,
         "variety": document.getElementById("variety-slider").value,
+        "inversions": "1" if document.getElementById("inversions-toggle").checked else "0",
         "lang": _lang,
     }
 
@@ -141,6 +142,18 @@ def _apply_ui_state(state: dict) -> None:
         if n is not None and 0 <= n <= 12:
             document.getElementById("variety-slider").value = str(n)
             _sync_slider_output("variety-slider")
+
+    inversions = state.get("inversions")
+    if inversions is not None:
+        # Accept both stringified "1"/"0" (from the URL fragment) and the
+        # bool/int Python types JSON may decode from localStorage.
+        toggle = document.getElementById("inversions-toggle")
+        if isinstance(inversions, bool):
+            toggle.checked = inversions
+        elif isinstance(inversions, (int, float)):
+            toggle.checked = bool(inversions)
+        elif isinstance(inversions, str):
+            toggle.checked = inversions in ("1", "true", "True", "on")
 
     lang = state.get("lang")
     if isinstance(lang, str) and lang in SUPPORTED_LANGUAGES:
@@ -271,14 +284,17 @@ def _current_tuning():
 
 
 def _search_options() -> SearchOptions:
-    """Read the two slider values and build a SearchOptions object.
+    """Read the sliders and the inversions toggle and build a
+    SearchOptions object.
 
     Slider boundaries (mirroring the HTML attributes):
       - positions-slider:  1..16, default 8
       - variety-slider:    0..12, default 5  (mapped to min_diversity_distance)
 
     When the variety slider sits at 0 we disable diversification entirely;
-    everything else just feeds the min_diversity_distance threshold.
+    everything else just feeds the min_diversity_distance threshold. The
+    inversions toggle is binary: off = root-position only,
+    on = inversions only. A slash chord forces its bass either way.
     """
     try:
         limit = int(document.getElementById("positions-slider").value)
@@ -288,10 +304,12 @@ def _search_options() -> SearchOptions:
         variety = int(document.getElementById("variety-slider").value)
     except (TypeError, ValueError):
         variety = 5
+    inversions = bool(document.getElementById("inversions-toggle").checked)
     return SearchOptions(
         limit=max(1, limit),
         diversify=(variety > 0),
         min_diversity_distance=max(0, variety),
+        inversions_only=inversions,
     )
 
 
@@ -435,21 +453,100 @@ def toggle_expanded(chord_idx: int) -> None:
 
 
 def pick_voicing(chord_idx: int, voicing_idx: int) -> None:
-    """User selected a non-default voicing — mark it sticky and re-cascade."""
+    """User selected a non-default voicing — mark it sticky and re-cascade.
+
+    When the picked voicing is an inversion of a plain chord (no slash
+    bass in the input), we rewrite the chord text in the input field
+    so it becomes the slash form (e.g. ``F`` → ``F/C``). This keeps the
+    UI honest — the chord name reflects what's actually played — and
+    makes the choice survive a reload because the URL fragment / local
+    storage now carry the explicit slash chord.
+
+    Re-parsing as a slash chord forces the bass on all subsequent
+    voicing alternatives of that slot. To revert to root-position F,
+    the user edits the text manually to drop the ``/C``.
+    """
     if not (0 <= chord_idx < len(_progression)):
         return
     slot = _progression[chord_idx]
     if not (0 <= voicing_idx < len(slot.voicings)):
         return
-    slot.active_index = voicing_idx
-    slot.is_user_picked = True
-    slot.expanded = False
 
-    # Cascade forward from this slot. (No cascade backward — earlier
-    # slots are upstream of this choice.) We re-run the full cascade
-    # for simplicity; tiles whose is_user_picked is True stay put.
+    selected = slot.voicings[voicing_idx]
+    new_symbol = _display_title(selected, slot.chord)
+
+    if new_symbol is not None and new_symbol != slot.symbol:
+        # The pick is an inversion of a non-slash chord. Rewrite the
+        # slot in place as a slash chord, then mirror the change back
+        # into the chord-input field.
+        try:
+            new_chord = parse(new_symbol)
+        except ChordParseError:
+            return  # we built this symbol ourselves; shouldn't fail
+        try:
+            tuning = _current_tuning()
+        except KeyError:
+            tuning = ALL_TUNINGS[0]
+        new_voicings = find_voicings(new_chord, tuning, _search_options())
+        # Keep the user's exact fret pattern if it still appears in the
+        # new candidate list; otherwise default to the first voicing.
+        target_shape = selected.frets
+        new_active_idx = next(
+            (i for i, v in enumerate(new_voicings) if v.frets == target_shape),
+            0,
+        )
+        _progression[chord_idx] = ChordSlot(
+            symbol=new_symbol,
+            chord=new_chord,
+            error=None,
+            voicings=new_voicings,
+            active_index=new_active_idx,
+            is_user_picked=True,
+            expanded=False,
+        )
+        _replace_chord_in_input(chord_idx, new_symbol)
+    else:
+        # Same symbol — just bookmark the selection in memory.
+        slot.active_index = voicing_idx
+        slot.is_user_picked = True
+        slot.expanded = False
+
+    # Cascade forward through subsequent non-user-picked slots. Earlier
+    # slots are upstream of this choice and stay put.
     _cascade_defaults()
     _render()
+    _persist_state()
+
+
+def _replace_chord_in_input(idx: int, new_symbol: str) -> None:
+    """Rewrite the ``idx``-th chord token in the chord-input field.
+
+    We walk the raw text alternately by chord-token / separator runs so
+    that the user's original separators (``|``, commas, padded spaces)
+    survive the rewrite — only the targeted chord changes.
+    """
+    input_el = document.getElementById("chord-input")
+    raw = input_el.value
+    # Split into alternating non-separator and separator chunks. The
+    # capturing group keeps the separators in the output.
+    parts = re.split(r"([\s,|]+)", raw)
+    seen = 0
+    for i, part in enumerate(parts):
+        if not part:
+            continue
+        if re.fullmatch(r"[\s,|]+", part):
+            continue
+        if seen == idx:
+            parts[i] = new_symbol
+            input_el.value = "".join(parts)
+            return
+        seen += 1
+    # Token not found (input changed concurrently?) — last-resort
+    # rejoin so we at least don't lose the user's data.
+    tokens = _split_progression(raw)
+    if 0 <= idx < len(tokens):
+        tokens[idx] = new_symbol
+        input_el.value = " ".join(tokens)
 
 
 # --- DOM rendering ----------------------------------------------------
@@ -506,16 +603,25 @@ def _render_slot(idx: int, slot: ChordSlot, opts: RenderOptions):
         "title",
         t(_lang, "alternatives_hint"),
     )
-    active_el.innerHTML = render_voicing(active, slot.chord, opts)
+    active_el.innerHTML = render_voicing(
+        active, slot.chord, opts,
+        title_override=_display_title(active, slot.chord),
+    )
     slot_el.appendChild(active_el)
 
     # Notes caption.
     notes_el = document.createElement("div")
     notes_el.className = "slot-notes"
-    notes_el.textContent = (
+    caption = (
         t(_lang, "notes_prefix")
         + t(_lang, "notes_separator").join(str(n) for n in slot.chord.notes())
     )
+    bass_text = _bass_caption(active, slot.chord)
+    if bass_text:
+        # The bass note differs from the chord's root — it's an inversion.
+        # Flag it inline so the user can tell at a glance.
+        caption += "  ·  " + t(_lang, "bass_label") + " : " + bass_text
+    notes_el.textContent = caption
     slot_el.appendChild(notes_el)
 
     # Alternatives panel (only when expanded).
@@ -528,7 +634,10 @@ def _render_slot(idx: int, slot: ChordSlot, opts: RenderOptions):
             alt = document.createElement("div")
             alt.className = "voicing alternative"
             alt.setAttribute("data-vidx", str(vidx))
-            alt.innerHTML = render_voicing(v, slot.chord, opts)
+            alt.innerHTML = render_voicing(
+                v, slot.chord, opts,
+                title_override=_display_title(v, slot.chord),
+            )
             alts_el.appendChild(alt)
         slot_el.appendChild(alts_el)
 
@@ -542,6 +651,54 @@ def _html_escape(text: str) -> str:
         .replace(">", "&gt;")
         .replace('"', "&quot;")
     )
+
+
+def _display_title(voicing: Voicing, chord: Chord) -> str | None:
+    """Compute the chord-name string to draw above this voicing.
+
+    When the voicing is an inversion *and* the user didn't already
+    write a slash chord, we append the bass note to the chord symbol
+    so the diagram shows ``"F/C"`` rather than just ``"F"``. When the
+    chord input already carries an explicit bass (e.g. ``"F/C"``), or
+    when the voicing is in root position, we return ``None`` so the
+    renderer falls back to ``chord.symbol``.
+    """
+    if chord.bass is not None:
+        # The user typed the slash explicitly; chord.symbol already
+        # carries the bass — don't double it up to ``F/C/C``.
+        return None
+    bass_text = _bass_caption(voicing, chord)
+    if not bass_text:
+        return None
+    return f"{chord.symbol}/{bass_text}"
+
+
+def _bass_caption(voicing: Voicing, chord: Chord) -> str:
+    """Return the spelled name of the voicing's bass note when it
+    differs from the chord's root, else an empty string.
+
+    Used to label inversions in the slot caption — root-position
+    voicings get nothing extra, inversions get a ``"basse : E"`` /
+    ``"bass: E"`` tail.
+    """
+    bass_idx = next(
+        (i for i, f in enumerate(voicing.frets) if f is not None),
+        None,
+    )
+    if bass_idx is None:
+        return ""
+    bass_pc = voicing.pitch_classes[bass_idx]
+    if bass_pc is None or bass_pc == chord.root.pitch_class:
+        return ""
+    bass_degree = voicing.degrees[bass_idx]
+    if bass_degree is None:
+        return ""
+    # Look the spelled name up via the chord's notes(), which preserve
+    # the enharmonic spelling (e.g. F# rather than Gb for D major).
+    for (deg, _), note in zip(chord.intervals, chord.notes()):
+        if deg == bass_degree:
+            return str(note)
+    return ""
 
 
 # --- Translation application ------------------------------------------
@@ -608,6 +765,11 @@ def _on_positions_input(event):
 def _on_variety_input(event):
     _sync_slider_output("variety-slider")
     debounce("slider", update_progression, 120)
+
+
+@when("change", "#inversions-toggle")
+def _on_inversions_change(event):
+    update_progression()
 
 
 def _sync_slider_output(slider_id: str) -> None:
