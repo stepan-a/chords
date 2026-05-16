@@ -95,6 +95,13 @@ class SearchOptions:
     """If True, muted strings between sounding strings are allowed but
     penalized; if False, sounding strings must be a contiguous block."""
 
+    allow_inversions: bool = False
+    """When False (the default), the chord's root must be in the bass.
+    Slash chords (e.g. ``D/F#``) always force the explicit bass and
+    ignore this option — picking an inversion is the whole point of
+    asking for one. Setting this to True lets the search return any
+    voicing whose lowest sounding string is a chord tone."""
+
     limit: int = 8
     """Maximum number of voicings to return."""
 
@@ -130,14 +137,25 @@ def find_voicings(
 
     all_pcs = required_pcs | optional_pcs
 
-    # 2. Slash-bass handling. The chord.bass note (if present) MUST be the
-    # bass of the voicing; otherwise we just prefer the root (scoring).
+    # 2. Bass-note constraint.
+    #
+    # Three cases, in priority order:
+    #   - Slash chord (``C/E``): the explicit bass is mandatory and
+    #     overrides everything else — picking an inversion is the
+    #     whole point of writing one.
+    #   - ``allow_inversions=False`` (default): force the chord's root
+    #     in the bass, so inversions don't pollute the candidate list.
+    #   - ``allow_inversions=True``: any chord tone may sit in the
+    #     bass; the scorer still rewards root-position when picking
+    #     the canonical voicing.
     bass_pc: int | None
     if chord.bass is not None:
         bass_pc = chord.bass.pitch_class
         # The bass note itself must be reachable on some string somewhere;
         # add it to all_pcs even if it duplicates a chord tone.
         all_pcs = all_pcs | {bass_pc}
+    elif not options.allow_inversions:
+        bass_pc = chord.root.pitch_class
     else:
         bass_pc = None  # any chord tone may be in the bass; root preferred.
 
@@ -179,12 +197,139 @@ def find_voicings(
         seen_shapes.add(v.shape_key())
         deduped.append(v)
 
-    filtered = _filter_dominated(deduped)
+    filtered = _dedup_by_fingering(deduped, chord)
+    filtered = _drop_subsets(filtered)
     if options.diversify and options.min_diversity_distance > 0:
         return _diversify(
             filtered, options.limit, options.min_diversity_distance
         )
     return filtered[: options.limit]
+
+
+def _drop_subsets(voicings: list[Voicing]) -> list[Voicing]:
+    """Drop voicings that are a strictly reduced version of another one
+    in the list — same notes on a subset of strings, same bass, and no
+    cheaper to play.
+
+    Concretely: drop *B* if there exists *A* such that
+
+      * ``A``'s sounding ``(string, pitch-class)`` pairs strictly
+        contain ``B``'s — that is, every note ``B`` sounds is also in
+        ``A`` on the same string, and ``A`` sounds at least one more
+        string;
+      * the two share the same bass pitch class (so an inversion is
+        never confused with a reduced root-position variant);
+      * ``A`` does **not** require more fingers than ``B``.
+
+    The finger guard is what stops the rule from eating
+    "easier-to-play" small voicings such as Open G's ``x00000`` (no
+    fingers, G in the bass) in favour of the larger ``500000`` (one
+    finger pressing the low D up to a G octave below): the larger
+    version uses *more* fingers per added string, so the rule keeps
+    the smaller one.
+
+    For a chord like F major, the canonical full barre ``133211``
+    (four fingers) dominates the partial ``xx3211`` (four fingers,
+    same notes on strings 2–5) — adding strings 0 and 1 to the barre
+    requires no additional fingers, just covering them with the index
+    already laid across the neck.
+
+    The check is on sounding *(string, pitch-class)* pairs rather than
+    pressed positions. That matters when a string that would otherwise
+    be silent in the larger voicing sounds a different note in the
+    smaller one — e.g. ``1 0 3 2 x x`` (with the open A string) is
+    *not* a sounding-subset of the full barre on string 1 (where the
+    full barre sounds C, not A), so it's correctly kept.
+    """
+    if len(voicings) <= 1:
+        return voicings
+
+    sounds = [_sounding_set(v) for v in voicings]
+    basses = [_bass_pc(v) for v in voicings]
+    fingers = [v.fingers for v in voicings]
+    keep = [True] * len(voicings)
+
+    for i in range(len(voicings)):
+        if not keep[i]:
+            continue
+        for j in range(len(voicings)):
+            if i == j or not keep[j]:
+                continue
+            if basses[i] != basses[j]:
+                continue
+            if sounds[i] < sounds[j] and fingers[j] <= fingers[i]:
+                keep[i] = False
+                break
+    return [v for v, k in zip(voicings, keep) if k]
+
+
+def _sounding_set(v: Voicing) -> set[tuple[int, int]]:
+    """The set of ``(string_index, pitch_class)`` pairs the voicing
+    sounds — muted strings contribute nothing."""
+    return {
+        (i, pc) for i, pc in enumerate(v.pitch_classes) if pc is not None
+    }
+
+
+def _dedup_by_fingering(
+    voicings: list[Voicing],
+    chord: Chord,
+) -> list[Voicing]:
+    """Collapse voicings that share the same set of pressed (string, fret)
+    pairs.
+
+    From a player's point of view two voicings with the same pressed
+    positions are the *same shape* on the neck — the only differences
+    (which strings are left open vs muted) are right-hand decisions, not
+    different fingerings. Listing both wastes a slot and makes the user
+    think two diagrams are duplicates.
+
+    Example: ``x02210`` (open Am) and ``002210`` (the same shape with
+    the low E ringing as a 5th in the bass) collapse to a single
+    representative; we keep the one with the root in the bass.
+    """
+    root_pc = chord.root.pitch_class
+    canonical: dict[tuple, Voicing] = {}
+    for v in voicings:
+        sig = _fingering_signature(v)
+        existing = canonical.get(sig)
+        if existing is None or _better_canonical(v, existing, root_pc):
+            canonical[sig] = v
+    kept_ids = {id(v) for v in canonical.values()}
+    return [v for v in voicings if id(v) in kept_ids]
+
+
+def _fingering_signature(v: Voicing) -> tuple[tuple[int, int], ...]:
+    """The set of pressed (string, fret) pairs, fret >= 1."""
+    return tuple(
+        (i, f) for i, f in enumerate(v.frets)
+        if f is not None and f >= 1
+    )
+
+
+def _better_canonical(a: Voicing, b: Voicing, root_pc: int) -> bool:
+    """Return True when *a* is a better canonical representative than *b*
+    for an equivalence class.
+
+    Tie-breakers, in order:
+      1. Root in the bass (chord identity beats inversion).
+      2. More sounding strings (richer voicing wins).
+      3. Better (lower) score.
+    """
+    a_root = (_bass_pc(a) == root_pc)
+    b_root = (_bass_pc(b) == root_pc)
+    if a_root != b_root:
+        return a_root
+    if a.num_sounding != b.num_sounding:
+        return a.num_sounding > b.num_sounding
+    return a.score < b.score
+
+
+def _bass_pc(v: Voicing) -> int | None:
+    for pc in v.pitch_classes:
+        if pc is not None:
+            return pc
+    return None
 
 
 def _diversify(
@@ -243,67 +388,12 @@ def _diversify(
     return picked
 
 
-def _filter_dominated(voicings: list[Voicing]) -> list[Voicing]:
-    """Drop voicings strictly dominated by another in the list.
-
-    A voicing *A* dominates *B* when:
-
-    1.  A and B agree on every string where B sounds (same fret).
-    2.  A sounds on at least one additional string where B is muted.
-    3.  A and B share the same bass string index, so the chord's bass
-        note is identical — otherwise A is a different voicing (e.g. an
-        inversion), not a richer version of B.
-
-    Under these conditions, B offers nothing a player can't get from A
-    by simply not strumming a string — a duplicate listing wastes a slot.
-    Listing both clutters the UI and confuses the user with "the same
-    fingering with different scores".
-
-    Implementation note: a single pass sorted by ``num_sounding`` desc
-    lets us only ever check a candidate against already-kept voicings
-    with the same bass index. That keeps the cost near linear in the
-    number of voicings.
-    """
-    # Index of accepted voicings, keyed by bass string. Bass-mismatched
-    # candidates can never dominate each other, so the buckets stay small.
-    accepted_by_bass: dict[int | None, list[Voicing]] = {}
-
-    # Sort by num_sounding descending; ties keep original (score) order.
-    order = sorted(
-        range(len(voicings)),
-        key=lambda i: -voicings[i].num_sounding,
-    )
-    keep_flags = [True] * len(voicings)
-
-    for idx in order:
-        v = voicings[idx]
-        bass = _bass_index(v)
-        bucket = accepted_by_bass.get(bass, [])
-        if any(_dominates(a, v) for a in bucket):
-            keep_flags[idx] = False
-            continue
-        bucket.append(v)
-        accepted_by_bass[bass] = bucket
-
-    return [v for v, keep in zip(voicings, keep_flags) if keep]
-
-
 def _bass_index(v: Voicing) -> int | None:
+    """Index of the lowest sounding string, or None if all muted."""
     for i, f in enumerate(v.frets):
         if f is not None:
             return i
     return None
-
-
-def _dominates(a: Voicing, b: Voicing) -> bool:
-    if a.num_sounding <= b.num_sounding:
-        return False
-    for af, bf in zip(a.frets, b.frets):
-        if bf is None:
-            continue
-        if af != bf:
-            return False
-    return _bass_index(a) == _bass_index(b)
 
 
 # --- Voice-leading distance (for chord progressions) -----------------------
@@ -497,6 +587,26 @@ def _search(
         finger_info = _estimate_fingers(choices)
         if finger_info is None or finger_info.fingers > options.max_fingers:
             return
+
+        # 5b. Reject anatomically awkward partial barres.
+        #
+        # A barre that starts at the lowest string (low_s == 0) yet does
+        # not extend all the way to the highest string, with an *open*
+        # string sounding above it, requires the player to anchor the
+        # index finger at the bass and lift its tip away from the
+        # outermost string at the very last moment. Most players —
+        # ours included — find that physically impossible.
+        # The classic A-shape partial barre (``x02220``) does not match
+        # this rule because its barre starts at string 2, not string 0.
+        if finger_info.barre is not None:
+            barre_fret, low_s, high_s = finger_info.barre
+            if low_s == 0:
+                last_string = tuning.num_strings - 1
+                if high_s < last_string:
+                    for i in range(high_s + 1, last_string + 1):
+                        c = choices[i]
+                        if not _is_muted(c) and c.fret == 0:
+                            return  # awkward partial barre
 
         # 6. Build Voicing and score it.
         v = _make_voicing(

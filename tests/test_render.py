@@ -244,18 +244,21 @@ class TestSvgStructure:
         assert not digits, f"unexpected finger labels in none mode: {digits}"
 
     def test_open_tuning_zero_voicing_well_formed(self):
+        # Pick the top voicing for G in Open G: with the new fingering-
+        # signature dedup that's x00000 (G in the bass), which still has
+        # five open strings — the markers we want to count.
         c = parse("G")
-        v = find_voicings(c, OPEN_G)[1]   # the all-open (0,0,0,0,0,0)
-        assert v.frets == (0, 0, 0, 0, 0, 0)
+        v = find_voicings(c, OPEN_G)[0]
         svg = render_voicing(v, c)
         ET.fromstring(svg)  # parses
-        # All 6 strings open → 6 open-circle markers.
+        # All sounding strings are open → as many open-circle markers as
+        # sounding strings, and no pressed-fret dots in the diagram body.
         root = parse_svg(svg)
         open_circles = [
             c for c in root.iter("circle")
             if c.get("fill") == "none"
         ]
-        assert len(open_circles) == 6
+        assert len(open_circles) == v.num_sounding
 
 
 # ----------------------------------------------------------------------
