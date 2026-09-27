@@ -20,7 +20,7 @@ deactivate
 # de rsync — et --delete retire du répertoire cible tout fichier
 # qui n'existe plus dans le dépôt.
 
-TARGET_DIR="/home/www/chords.ithaca.fr"
+TARGET_DIR="/puck/www/chords.ithaca.fr"
 
 install -d -m 0755 "$TARGET_DIR"
 rsync -av --delete \
