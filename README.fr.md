@@ -1,4 +1,4 @@
-[![English](https://img.shields.io/badge/lang-English-lightgrey?style=flat-square)](README.md) ![Français](https://img.shields.io/badge/lang-Fran%C3%A7ais-005AB4?style=flat-square) [![tests](https://git.ithaca.fr/stepan/chords/badges/master/pipeline.svg?job=test&key_text=tests&key_width=44)](https://git.ithaca.fr/stepan/chords/-/pipelines) [![deploy](https://git.ithaca.fr/stepan/chords/badges/master/pipeline.svg?job=deploy&key_text=deploy&key_width=52)](https://git.ithaca.fr/stepan/chords/-/pipelines)
+[![English](https://img.shields.io/badge/lang-English-lightgrey?style=flat-square)](README.md) ![Français](https://img.shields.io/badge/lang-Fran%C3%A7ais-005AB4?style=flat-square) ![Puck CI](https://img.shields.io/endpoint?url=https://stephane-adjemian.fr/ci-status/chords.git.json)
 
 # Accords — diagrammes d'accords pour guitare
 
